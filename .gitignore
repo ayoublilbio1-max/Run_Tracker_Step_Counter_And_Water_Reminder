@@ -41,3 +41,8 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Editor/tooling (specific to your setup)
+.vscode/
+.history/
+.claude/
