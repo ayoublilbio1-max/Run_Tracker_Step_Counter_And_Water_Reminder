@@ -4,9 +4,11 @@ import { Tabs, router } from "expo-router";
 import { Image, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useThemeColors } from "../../constants/theme";
+import { useUserProfileStore } from "../../store/userProfileStore";
 
 const homeIcon = require("../../assets/icons/home_icon.png");
-const profileIcon = require("../../assets/icons/user_man.png");
+const profileIconMan = require("../../assets/icons/user_man.png");
+const profileIconWoman = require("../../assets/icons/user_woman.png");
 
 function RunButton() {
   const colors = useThemeColors();
@@ -71,6 +73,8 @@ function TabIconPill({
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
+  const gender = useUserProfileStore((state) => state.gender);
+  const profileIcon = gender === "female" ? profileIconWoman : profileIconMan;
 
   return (
     <Tabs
@@ -107,9 +111,7 @@ export default function TabsLayout() {
             </View>
           ),
         }}
-        listeners={{
-          tabPress: (e) => e.preventDefault(),
-        }}
+        listeners={{ tabPress: (e) => e.preventDefault() }}
       />
       <Tabs.Screen
         name="profile"
@@ -119,12 +121,7 @@ export default function TabsLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="history"
-        options={{
-          href: null,
-        }}
-      />
+      <Tabs.Screen name="history" options={{ href: null }} />
     </Tabs>
   );
 }
@@ -132,16 +129,13 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   tabBar: {},
   tabButtonPill: {
-    width: 48,
+    width: 64,
     height: 48,
     borderRadius: 24,
     justifyContent: "center",
     alignItems: "center",
   },
-  runButtonWrapper: {
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  runButtonWrapper: { justifyContent: "center", alignItems: "center" },
   runButton: {
     width: 70,
     height: 70,
