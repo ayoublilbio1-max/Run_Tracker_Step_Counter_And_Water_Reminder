@@ -1,0 +1,30 @@
+import { create } from "zustand";
+
+export type Activity = {
+  id: string;
+  date: string;
+  distanceKm: number;
+  durationLabel: string;
+  paceLabel: string;
+  kcal: number;
+  intensity: { lowMin: string; moderateMin: string; highMin: string };
+  route?: { latitude: number; longitude: number }[];
+};
+
+type ActivitiesState = {
+  activities: Activity[];
+  addActivity: (activity: Activity) => void;
+  removeActivity: (id: string) => void;
+  getActivityById: (id: string) => Activity | undefined;
+};
+
+export const useActivitiesStore = create<ActivitiesState>((set, get) => ({
+  activities: [],
+  addActivity: (activity) =>
+    set((state) => ({ activities: [activity, ...state.activities] })),
+  removeActivity: (id) =>
+    set((state) => ({
+      activities: state.activities.filter((a) => a.id !== id),
+    })),
+  getActivityById: (id) => get().activities.find((a) => a.id === id),
+}));

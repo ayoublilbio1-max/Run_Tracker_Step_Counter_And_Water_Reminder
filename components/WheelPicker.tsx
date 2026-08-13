@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
 import { useThemeColors } from "../constants/theme";
 
@@ -20,12 +20,12 @@ export default function WheelPicker({
 }: Props) {
   const colors = useThemeColors();
   const scrollY = useRef(new Animated.Value(0)).current;
-  const scrollRef = useRef<any>(null);
+  const listRef = useRef<any>(null);
   const initialIndex = Math.max(0, data.indexOf(selectedValue));
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({
-      y: initialIndex * ITEM_HEIGHT,
+    listRef.current?.scrollToOffset({
+      offset: initialIndex * ITEM_HEIGHT,
       animated: false,
     });
   }, []);
@@ -37,6 +37,50 @@ export default function WheelPicker({
     onChange(data[clamped]);
   };
 
+  const getItemLayout = useCallback(
+    (_: any, index: number) => ({
+      length: ITEM_HEIGHT,
+      offset: ITEM_HEIGHT * index,
+      index,
+    }),
+    [],
+  );
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: number; index: number }) => {
+      const inputRange = [
+        (index - 2) * ITEM_HEIGHT,
+        (index - 1) * ITEM_HEIGHT,
+        index * ITEM_HEIGHT,
+        (index + 1) * ITEM_HEIGHT,
+        (index + 2) * ITEM_HEIGHT,
+      ];
+      const opacity = scrollY.interpolate({
+        inputRange,
+        outputRange: [0.2, 0.4, 1, 0.4, 0.2],
+        extrapolate: "clamp",
+      });
+      const scale = scrollY.interpolate({
+        inputRange,
+        outputRange: [0.7, 0.85, 1.15, 0.85, 0.7],
+        extrapolate: "clamp",
+      });
+      return (
+        <Animated.View
+          style={[
+            styles.item,
+            { height: ITEM_HEIGHT, opacity, transform: [{ scale }] },
+          ]}
+        >
+          <Text style={[styles.itemText, { color: colors.textPrimary }]}>
+            {formatLabel ? formatLabel(item) : item}
+          </Text>
+        </Animated.View>
+      );
+    },
+    [scrollY, formatLabel, colors.textPrimary],
+  );
+
   return (
     <View style={[styles.container, { height: ITEM_HEIGHT * VISIBLE_ITEMS }]}>
       <View
@@ -45,11 +89,19 @@ export default function WheelPicker({
       >
         <View style={[styles.arrow, { borderRightColor: colors.primary }]} />
       </View>
-      <Animated.ScrollView
-        ref={scrollRef}
+      <Animated.FlatList
+        ref={listRef}
+        data={data}
+        keyExtractor={(item) => String(item)}
+        renderItem={renderItem}
+        getItemLayout={getItemLayout}
         showsVerticalScrollIndicator={false}
         snapToInterval={ITEM_HEIGHT}
         decelerationRate="fast"
+        initialNumToRender={9}
+        maxToRenderPerBatch={9}
+        windowSize={5}
+        removeClippedSubviews
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true },
@@ -57,40 +109,7 @@ export default function WheelPicker({
         scrollEventThrottle={16}
         onMomentumScrollEnd={handleMomentumEnd}
         contentContainerStyle={{ paddingVertical: ITEM_HEIGHT * 2 }}
-      >
-        {data.map((value, index) => {
-          const inputRange = [
-            (index - 2) * ITEM_HEIGHT,
-            (index - 1) * ITEM_HEIGHT,
-            index * ITEM_HEIGHT,
-            (index + 1) * ITEM_HEIGHT,
-            (index + 2) * ITEM_HEIGHT,
-          ];
-          const opacity = scrollY.interpolate({
-            inputRange,
-            outputRange: [0.2, 0.4, 1, 0.4, 0.2],
-            extrapolate: "clamp",
-          });
-          const scale = scrollY.interpolate({
-            inputRange,
-            outputRange: [0.7, 0.85, 1.15, 0.85, 0.7],
-            extrapolate: "clamp",
-          });
-          return (
-            <Animated.View
-              key={value}
-              style={[
-                styles.item,
-                { height: ITEM_HEIGHT, opacity, transform: [{ scale }] },
-              ]}
-            >
-              <Text style={[styles.itemText, { color: colors.textPrimary }]}>
-                {formatLabel ? formatLabel(value) : value}
-              </Text>
-            </Animated.View>
-          );
-        })}
-      </Animated.ScrollView>
+      />
     </View>
   );
 }

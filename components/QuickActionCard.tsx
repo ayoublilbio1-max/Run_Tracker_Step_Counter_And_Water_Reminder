@@ -1,23 +1,23 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Pressable, StyleSheet, Text } from "react-native";
-import { radius, spacing, typography } from "../constants/theme";
+import { Pressable, Text, StyleSheet } from 'react-native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { spacing, radius, typography } from '../constants/theme';
 
 type Props = {
   label: string;
-  iconName: keyof typeof Ionicons.glyphMap;
+  iconName: string;
+  iconLibrary?: 'ionicons' | 'material';
   backgroundColor: string;
   onPress?: () => void;
 };
 
-export default function QuickActionCard({
-  label,
-  iconName,
-  backgroundColor,
-  onPress,
-}: Props) {
+export default function QuickActionCard({ label, iconName, iconLibrary = 'ionicons', backgroundColor, onPress }: Props) {
   return (
     <Pressable style={[styles.card, { backgroundColor }]} onPress={onPress}>
-      <Ionicons name={iconName} size={22} color="#FFFFFF" />
+      {iconLibrary === 'material' ? (
+        <MaterialCommunityIcons name={iconName as any} size={22} color="#FFFFFF" />
+      ) : (
+        <Ionicons name={iconName as any} size={22} color="#FFFFFF" />
+      )}
       <Text style={styles.label}>{label}</Text>
     </Pressable>
   );
@@ -26,12 +26,12 @@ export default function QuickActionCard({
 const styles = StyleSheet.create({
   card: {
     flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: spacing.sm,
     paddingVertical: spacing.md + 2,
     borderRadius: radius.lg,
   },
-  label: { ...typography.h2, color: "#FFFFFF" },
+  label: { ...typography.h2, color: '#FFFFFF' },
 });

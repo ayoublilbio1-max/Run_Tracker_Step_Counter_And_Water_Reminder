@@ -7,6 +7,8 @@ import GoalStatRow from "../../components/GoalStatRow";
 import QuickActionCard from "../../components/QuickActionCard";
 import RecentActivityCard from "../../components/RecentActivityCard";
 import { spacing, typography, useThemeColors } from "../../constants/theme";
+import { useActivitiesStore } from "../../store/activitiesStore";
+import { useStepsStore } from "../../store/stepsStore";
 import { useUserProfileStore } from "../../store/userProfileStore";
 
 const logo = require("../../assets/images/logo.png");
@@ -22,9 +24,9 @@ export default function Home() {
   const runDistanceMeters = useUserProfileStore(
     (state) => state.runDistanceMeters,
   );
+  const todaySteps = useStepsStore((state) => state.todaySteps);
+  const activities = useActivitiesStore((state) => state.activities);
 
-  // TODO: replace with real tracked data once step counter / GPS tracking (Phase 2/3) are wired up.
-  const todaySteps = 0;
   const todayRunMeters = 0;
 
   const stepsPercent = (todaySteps / dailyStepGoal) * 100;
@@ -32,6 +34,7 @@ export default function Home() {
   const weeklyPercent = (stepsPercent + runPercent) / 2;
 
   const goalLabel = goalType === "walking" ? "Walking Goal" : "Run Goal";
+  const latestActivity = activities[0];
 
   return (
     <SafeAreaView
@@ -91,11 +94,20 @@ export default function Home() {
             label="Steps"
             iconName="footsteps"
             backgroundColor={colors.steps}
+            onPress={() => router.push("/steps" as any)}
           />
           <QuickActionCard
             label="Water"
             iconName="water"
             backgroundColor={colors.water}
+            onPress={() => router.push("/water" as any)}
+          />
+          <QuickActionCard
+            label="Run"
+            iconName="run"
+            iconLibrary="material"
+            backgroundColor={colors.run}
+            onPress={() => router.push("/runs" as any)}
           />
         </View>
 
@@ -110,13 +122,22 @@ export default function Home() {
           </Pressable>
         </View>
 
-        <RecentActivityCard
-          date="Sep 27, 2021"
-          distanceKm={2.67}
-          durationLabel="00:22:46"
-          paceLabel="08:31/km"
-          kcal={210}
-        />
+        {latestActivity && (
+          <RecentActivityCard
+            date={latestActivity.date}
+            distanceKm={latestActivity.distanceKm}
+            durationLabel={latestActivity.durationLabel}
+            paceLabel={latestActivity.paceLabel}
+            kcal={latestActivity.kcal}
+            route={latestActivity.route}
+            onPress={() =>
+              router.push({
+                pathname: "/activity/[id]",
+                params: { id: latestActivity.id },
+              })
+            }
+          />
+        )}
       </View>
     </SafeAreaView>
   );
@@ -155,7 +176,7 @@ const styles = StyleSheet.create({
   },
   actionsRow: {
     flexDirection: "row",
-    gap: spacing.md,
+    gap: spacing.sm,
     marginBottom: spacing.xl,
   },
   activitiesHeader: {

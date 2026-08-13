@@ -13,12 +13,13 @@ const profileIconWoman = require("../../assets/icons/user_woman.png");
 function RunButton() {
   const colors = useThemeColors();
 
+  const handlePress = () => {
+    router.push("/runs" as any);
+    router.push({ pathname: "/run/[active]", params: { active: "new" } });
+  };
+
   return (
-    <Pressable
-      onPress={() =>
-        router.push({ pathname: "/run/[active]", params: { active: "new" } })
-      }
-    >
+    <Pressable onPress={handlePress}>
       <LinearGradient
         colors={[colors.gradientStart, colors.gradientEnd]}
         start={{ x: 0, y: 0 }}

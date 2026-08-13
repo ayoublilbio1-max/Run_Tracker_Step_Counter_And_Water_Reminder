@@ -1,6 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
 import { radius, spacing, useThemeColors } from "../constants/theme";
+
+type RoutePoint = { latitude: number; longitude: number };
 
 type Props = {
   date: string;
@@ -8,6 +11,8 @@ type Props = {
   durationLabel: string;
   paceLabel: string;
   kcal: number;
+  route?: RoutePoint[];
+  onPress?: () => void;
 };
 
 export default function RecentActivityCard({
@@ -16,16 +21,58 @@ export default function RecentActivityCard({
   durationLabel,
   paceLabel,
   kcal,
+  route,
+  onPress,
 }: Props) {
   const colors = useThemeColors();
+  const hasRoute = route && route.length >= 1;
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.surfaceAlt }]}>
-      <View
-        style={[styles.mapPlaceholder, { backgroundColor: colors.surface }]}
-      >
-        <Ionicons name="location" size={20} color={colors.primary} />
-      </View>
+    <Pressable
+      style={[styles.card, { backgroundColor: colors.surfaceAlt }]}
+      onPress={onPress}
+    >
+      {hasRoute ? (
+        <View style={styles.mapPlaceholder}>
+          <MapView
+            style={StyleSheet.absoluteFill}
+            provider={PROVIDER_GOOGLE}
+            initialRegion={{
+              latitude: route![0].latitude,
+              longitude: route![0].longitude,
+              latitudeDelta: 0.008,
+              longitudeDelta: 0.008,
+            }}
+            scrollEnabled={false}
+            zoomEnabled={false}
+            rotateEnabled={false}
+            pitchEnabled={false}
+            pointerEvents="none"
+          >
+            {route!.length > 1 && (
+              <Polyline
+                coordinates={route!}
+                strokeColor={colors.primary}
+                strokeWidth={3}
+              />
+            )}
+            <Marker coordinate={route![0]} pinColor="purple" />
+          </MapView>
+        </View>
+      ) : (
+        <View
+          style={[
+            styles.mapPlaceholder,
+            {
+              backgroundColor: colors.surface,
+              alignItems: "center",
+              justifyContent: "center",
+            },
+          ]}
+        >
+          <Ionicons name="location" size={20} color={colors.primary} />
+        </View>
+      )}
       <View style={styles.info}>
         <Text style={[styles.date, { color: colors.textMuted }]}>{date}</Text>
         <Text style={[styles.distance, { color: colors.textPrimary }]}>
@@ -43,7 +90,7 @@ export default function RecentActivityCard({
           </Text>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -59,8 +106,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: radius.md,
-    alignItems: "center",
-    justifyContent: "center",
+    overflow: "hidden",
   },
   info: { flex: 1 },
   date: { fontSize: 12, fontWeight: "600", marginBottom: 2 },
