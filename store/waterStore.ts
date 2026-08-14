@@ -1,7 +1,10 @@
-import { create } from 'zustand';
-import { useUserProfileStore } from './userProfileStore';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { scheduleWaterReminders } from "../utils/reminderNotifications";
+import { useUserProfileStore } from "./userProfileStore";
 
-export type ContainerType = 'cup' | 'glass' | 'mug' | 'bottle';
+export type ContainerType = "cup" | "glass" | "mug" | "bottle";
 
 export type WaterLog = {
   id: string;
@@ -38,31 +41,49 @@ export const CONTAINER_PRESETS: Record<ContainerType, number> = {
 };
 
 function computeSuggestedTarget(weightKg: number) {
-  const raw = weightKg * 33; // ~33ml per kg body weight, common hydration guideline
+  const raw = weightKg * 33;
   const rounded = Math.round(raw / 50) * 50;
   return Math.max(1500, Math.min(4000, rounded));
 }
 
-export const useWaterStore = create<WaterState>((set) => ({
-  targetMl: computeSuggestedTarget(useUserProfileStore.getState().weightKg),
-  setTargetMl: (ml) => set({ targetMl: ml }),
-  selectedContainer: 'glass',
-  setSelectedContainer: (type) => set({ selectedContainer: type }),
-  logs: [],
-  addLog: (amountMl, containerType) =>
-    set((state) => ({
-      logs: [
-        { id: Date.now().toString(), amountMl, containerType, timestamp: Date.now() },
-        ...state.logs,
-      ],
-    })),
-  removeLog: (id) => set((state) => ({ logs: state.logs.filter((log) => log.id !== id) })),
-  reminder: {
-    enabled: true,
-    startTime: '8:00 AM',
-    endTime: '11:00 PM',
-    intervalHours: 0.5,
-    message: "It's Time to drink water",
-  },
-  setReminder: (partial) => set((state) => ({ reminder: { ...state.reminder, ...partial } })),
-}));
+export const useWaterStore = create<WaterState>()(
+  persist(
+    (set, get) => ({
+      targetMl: computeSuggestedTarget(useUserProfileStore.getState().weightKg),
+      setTargetMl: (ml) => set({ targetMl: ml }),
+      selectedContainer: "glass",
+      setSelectedContainer: (type) => set({ selectedContainer: type }),
+      logs: [],
+      addLog: (amountMl, containerType) =>
+        set((state) => ({
+          logs: [
+            {
+              id: Date.now().toString(),
+              amountMl,
+              containerType,
+              timestamp: Date.now(),
+            },
+            ...state.logs,
+          ],
+        })),
+      removeLog: (id) =>
+        set((state) => ({ logs: state.logs.filter((log) => log.id !== id) })),
+      reminder: {
+        enabled: true,
+        startTime: "8:00 AM",
+        endTime: "11:00 PM",
+        intervalHours: 0.5,
+        message: "It's Time to drink water",
+      },
+      setReminder: (partial) => {
+        const updated = { ...get().reminder, ...partial };
+        set({ reminder: updated });
+        scheduleWaterReminders(updated).catch(() => {});
+      },
+    }),
+    {
+      name: "water-storage",
+      storage: createJSONStorage(() => AsyncStorage),
+    },
+  ),
+);

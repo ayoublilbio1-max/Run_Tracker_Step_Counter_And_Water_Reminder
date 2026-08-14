@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -22,14 +23,23 @@ import {
   requestLocationPermissions,
   startBackgroundTracking,
   stopBackgroundTracking,
+  updateForegroundNotificationText,
 } from "../../utils/backgroundLocation";
+import { checkAndScheduleRunReminder } from "../../utils/reminderNotifications";
+import {
+  presentRunCompleteNotification,
+  requestNotificationPermissions,
+} from "../../utils/runNotifications";
 import {
   calcPaceMinPerKm,
-  calcRunCalories,
+  calcSegmentCalories,
   classifySpeedIntensity,
   formatStopwatch,
   haversineMeters,
 } from "../../utils/runTracking";
+
+const STATIONARY_THRESHOLD_MS = 10000;
+const NOTIFICATION_UPDATE_INTERVAL_MS = 5000;
 
 export default function ActiveRun() {
   const colors = useThemeColors();
@@ -39,13 +49,14 @@ export default function ActiveRun() {
   const status = useRunSessionStore((s) => s.status);
   const route = useRunSessionStore((s) => s.route);
   const distanceMeters = useRunSessionStore((s) => s.distanceMeters);
+  const kcal = useRunSessionStore((s) => s.kcal);
+  const elapsedMs = useRunSessionStore((s) => s.elapsedMs);
   const start = useRunSessionStore((s) => s.start);
   const pause = useRunSessionStore((s) => s.pause);
   const resume = useRunSessionStore((s) => s.resume);
   const restart = useRunSessionStore((s) => s.restart);
   const finish = useRunSessionStore((s) => s.finish);
   const addPoint = useRunSessionStore((s) => s.addPoint);
-  const getElapsedMs = useRunSessionStore((s) => s.getElapsedMs);
 
   const [finishModalVisible, setFinishModalVisible] = useState(false);
   const [locked, setLocked] = useState(false);
@@ -55,9 +66,11 @@ export default function ActiveRun() {
     latitudeDelta: number;
     longitudeDelta: number;
   } | null>(null);
-  const [, forceTick] = useState(0);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
   const mapRef = useRef<MapView>(null);
+  const notificationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
 
   useEffect(() => {
     (async () => {
@@ -82,7 +95,6 @@ export default function ActiveRun() {
           longitudeDelta: 0.005,
         });
       } catch {
-        // fall back to default region below if a quick fix isn't available
         setInitialRegion({
           latitude: 37.78,
           longitude: -122.41,
@@ -91,16 +103,36 @@ export default function ActiveRun() {
         });
       }
 
+      let backgroundGranted = false;
       try {
-        await requestLocationPermissions(); // background, best-effort — may be a no-op/fail in Expo Go
+        backgroundGranted = await requestLocationPermissions();
       } catch {
-        // Background permission isn't available in Expo Go; safe to ignore here.
+        // Not available at all (e.g. old Expo Go) — treat as not granted below.
+      }
+
+      if (!backgroundGranted) {
+        Alert.alert(
+          "Background location not enabled",
+          'To keep the live tracking notification running and track your route while the screen is locked, allow location access "All the time" for Run Tracker in your phone settings.',
+          [
+            { text: "Not now", style: "cancel" },
+            { text: "Open Settings", onPress: () => Linking.openSettings() },
+          ],
+        );
+      }
+
+      try {
+        await requestNotificationPermissions();
+      } catch {
+        // Ignore — notification is best-effort.
       }
       start();
     })();
 
     return () => {
       watchRef.current?.remove();
+      if (notificationIntervalRef.current)
+        clearInterval(notificationIntervalRef.current);
       stopBackgroundTracking().catch(() => {});
       deactivateKeepAwake();
     };
@@ -110,14 +142,26 @@ export default function ActiveRun() {
     if (status !== "running") {
       watchRef.current?.remove();
       watchRef.current = null;
+      if (notificationIntervalRef.current) {
+        clearInterval(notificationIntervalRef.current);
+        notificationIntervalRef.current = null;
+      }
       deactivateKeepAwake();
       return;
     }
 
     activateKeepAwakeAsync();
-    startBackgroundTracking().catch(() => {
-      // Not available in Expo Go — foreground tracking below still works fine.
+    startBackgroundTracking().catch((err) => {
+      console.log("[ActiveRun] startBackgroundTracking failed:", err);
     });
+
+    notificationIntervalRef.current = setInterval(() => {
+      const s = useRunSessionStore.getState();
+      const km = s.distanceMeters / 1000;
+      const pace = calcPaceMinPerKm(km, s.elapsedMs);
+      const text = `${km.toFixed(2)} km · ${formatStopwatch(s.elapsedMs)} · ${pace.toFixed(2)} min/km`;
+      updateForegroundNotificationText(text).catch(() => {});
+    }, NOTIFICATION_UPDATE_INTERVAL_MS);
 
     (async () => {
       watchRef.current = await Location.watchPositionAsync(
@@ -135,21 +179,22 @@ export default function ActiveRun() {
           };
           const lastPoint = useRunSessionStore.getState().route.slice(-1)[0];
           if (!lastPoint) {
-            addPoint(point, 0, "low", 0);
+            addPoint(point, 0, "low", 0, 0);
             return;
           }
           if ((loc.coords.accuracy ?? 999) > 25) return;
           const distance = haversineMeters(lastPoint, point);
-          if (distance < 1) return;
+          if (distance < 3) return; // ignore GPS jitter
           const deltaSeconds = (point.timestamp - lastPoint.timestamp) / 1000;
           const speedKmh =
             deltaSeconds > 0 ? distance / 1000 / (deltaSeconds / 3600) : 0;
-          addPoint(
-            point,
-            distance,
-            classifySpeedIntensity(speedKmh),
+          const intensity = classifySpeedIntensity(speedKmh);
+          const kcalDelta = calcSegmentCalories(
+            intensity,
+            weightKg,
             deltaSeconds,
           );
+          addPoint(point, distance, intensity, deltaSeconds, kcalDelta);
         },
       );
     })();
@@ -157,18 +202,22 @@ export default function ActiveRun() {
     return () => {
       watchRef.current?.remove();
       watchRef.current = null;
+      if (notificationIntervalRef.current) {
+        clearInterval(notificationIntervalRef.current);
+        notificationIntervalRef.current = null;
+      }
     };
   }, [status]);
 
-  useEffect(() => {
-    const interval = setInterval(() => forceTick((t) => t + 1), 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const elapsedMs = getElapsedMs();
   const distanceKm = distanceMeters / 1000;
   const pace = calcPaceMinPerKm(distanceKm, elapsedMs);
-  const kcal = calcRunCalories(distanceKm, weightKg, elapsedMs);
+  const lastPoint = route.slice(-1)[0];
+
+  const lastMovementAt = useRunSessionStore.getState().lastMovementAt;
+  const isStationary =
+    status === "running" &&
+    lastMovementAt !== null &&
+    Date.now() - lastMovementAt > STATIONARY_THRESHOLD_MS;
 
   const handleFinishConfirmed = async () => {
     finish();
@@ -176,12 +225,15 @@ export default function ActiveRun() {
     try {
       await stopBackgroundTracking();
     } catch {
-      // Expected to fail in Expo Go — background tracking needs a dev build.
+      // Best-effort.
     }
     deactivateKeepAwake();
 
     const { intensitySeconds } = useRunSessionStore.getState();
     const fmtIntensity = (sec: number) => formatStopwatch(sec * 1000);
+    const durationLabel = formatStopwatch(elapsedMs);
+    const paceLabel = pace.toFixed(2);
+    const roundedKcal = Math.round(kcal * 10) / 10;
 
     addActivity({
       id: Date.now().toString(),
@@ -191,9 +243,9 @@ export default function ActiveRun() {
         year: "numeric",
       }),
       distanceKm,
-      durationLabel: formatStopwatch(elapsedMs),
-      paceLabel: pace.toFixed(2),
-      kcal: Math.round(kcal * 10) / 10,
+      durationLabel,
+      paceLabel,
+      kcal: roundedKcal,
       intensity: {
         lowMin: fmtIntensity(intensitySeconds.low),
         moderateMin: fmtIntensity(intensitySeconds.moderate),
@@ -204,6 +256,19 @@ export default function ActiveRun() {
         longitude: p.longitude,
       })),
     });
+
+    try {
+      await presentRunCompleteNotification({
+        distanceKm,
+        durationLabel,
+        paceLabel,
+        kcal: roundedKcal,
+      });
+    } catch {
+      // Ignore — notification is best-effort.
+    }
+
+    checkAndScheduleRunReminder().catch(() => {});
 
     router.replace("/run/summary" as any);
   };
@@ -225,6 +290,14 @@ export default function ActiveRun() {
         </View>
         <Text style={styles.timer}>{formatStopwatch(elapsedMs)}</Text>
         <Text style={styles.timerLabel}>Min</Text>
+        {isStationary && (
+          <View style={styles.stationaryPill}>
+            <View style={styles.stationaryDot} />
+            <Text style={styles.stationaryText}>
+              Stationary — timer keeps running
+            </Text>
+          </View>
+        )}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{distanceKm.toFixed(2)}</Text>
@@ -367,8 +440,26 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.6)",
     fontSize: 12,
     textAlign: "center",
-    marginBottom: spacing.lg,
+    marginBottom: spacing.sm,
   },
+  stationaryPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "center",
+    gap: spacing.xs,
+    backgroundColor: "rgba(251, 191, 36, 0.15)",
+    paddingVertical: 4,
+    paddingHorizontal: spacing.md,
+    borderRadius: 999,
+    marginBottom: spacing.md,
+  },
+  stationaryDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#FBBF24",
+  },
+  stationaryText: { color: "#FBBF24", fontSize: 12, fontWeight: "700" },
   statsRow: {
     flexDirection: "row",
     justifyContent: "space-around",

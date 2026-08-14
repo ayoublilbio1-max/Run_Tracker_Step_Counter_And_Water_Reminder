@@ -1,7 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { Pedometer } from "expo-sensors";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import EditTargetModal from "../../components/EditTargetModal";
 import StepsMenu from "../../components/StepsMenu";
@@ -11,20 +20,26 @@ import { spacing, useThemeColors } from "../../constants/theme";
 import { useStepsStore } from "../../store/stepsStore";
 import { useUserProfileStore } from "../../store/userProfileStore";
 import {
-    calcCaloriesFromSteps,
-    calcDistanceKm,
-    formatDuration,
+  calcCaloriesFromSteps,
+  calcDistanceKm,
+  formatDuration,
 } from "../../utils/fitnessCalculations";
+import {
+  clearStepsNotification,
+  updateStepsNotification,
+} from "../../utils/runNotifications";
 
 export default function StepsTracker() {
   const colors = useThemeColors();
   const todaySteps = useStepsStore((s) => s.todaySteps);
+  const history = useStepsStore((s) => s.history);
   const isRunning = useStepsStore((s) => s.isRunning);
   const start = useStepsStore((s) => s.start);
   const pause = useStepsStore((s) => s.pause);
   const turnOff = useStepsStore((s) => s.turnOff);
   const reset = useStepsStore((s) => s.reset);
   const getElapsedMs = useStepsStore((s) => s.getElapsedMs);
+  const ensureTodayRollover = useStepsStore((s) => s.ensureTodayRollover);
 
   const dailyStepGoal = useUserProfileStore((s) => s.dailyStepGoal);
   const setDailyStepGoal = useUserProfileStore((s) => s.setDailyStepGoal);
@@ -35,10 +50,27 @@ export default function StepsTracker() {
   const [, forceTick] = useState(0);
 
   useEffect(() => {
+    ensureTodayRollover();
+  }, []);
+
+  useEffect(() => {
     if (!isRunning) return;
     const interval = setInterval(() => forceTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
   }, [isRunning]);
+
+  useEffect(() => {
+    if (!isRunning) {
+      clearStepsNotification().catch(() => {});
+      return;
+    }
+    const notifyInterval = setInterval(() => {
+      const state = useStepsStore.getState();
+      const kcal = calcCaloriesFromSteps(state.todaySteps, weightKg);
+      updateStepsNotification(state.todaySteps, kcal).catch(() => {});
+    }, 4000);
+    return () => clearInterval(notifyInterval);
+  }, [isRunning, weightKg]);
 
   const elapsedMs = getElapsedMs();
   const distanceKm = calcDistanceKm(todaySteps, heightCm);
@@ -46,8 +78,39 @@ export default function StepsTracker() {
   const percent = dailyStepGoal > 0 ? (todaySteps / dailyStepGoal) * 100 : 0;
   const todayIndex = (new Date().getDay() + 6) % 7;
 
+  const last7DaysSteps =
+    todaySteps + history.slice(0, 6).reduce((sum, day) => sum + day.steps, 0);
+
   const goToReport = () => {
     router.push("/steps/report" as any);
+  };
+
+  const handlePlayPress = async () => {
+    if (isRunning) {
+      pause();
+      return;
+    }
+    const available = await Pedometer.isAvailableAsync().catch(() => false);
+    if (!available) {
+      Alert.alert(
+        "Step counting unavailable",
+        "Your device does not support step counting.",
+      );
+      return;
+    }
+    const { status } = await Pedometer.requestPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert(
+        "Permission needed",
+        "Step counting needs motion & activity permission. Enable it in Settings to use this feature.",
+        [
+          { text: "Not now", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() },
+        ],
+      );
+      return;
+    }
+    start();
   };
 
   return (
@@ -77,7 +140,7 @@ export default function StepsTracker() {
       >
         <View style={styles.ringSection}>
           <Pressable
-            onPress={isRunning ? pause : start}
+            onPress={handlePlayPress}
             style={[
               styles.sideButton,
               styles.sideButtonLeft,
@@ -158,7 +221,7 @@ export default function StepsTracker() {
               Last 7 Days Steps:
             </Text>
             <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
-              0
+              {last7DaysSteps.toLocaleString()}
             </Text>
           </View>
           <View
@@ -250,8 +313,8 @@ const styles = StyleSheet.create({
   summaryChevron: {
     width: 36,
     height: 36,
-    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
+    borderRadius: 18,
   },
 });

@@ -1,11 +1,9 @@
-import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import BackButton from "../../components/BackButton";
 import GoalTabSwitcher from "../../components/GoalTabSwitcher";
 import GradientButton from "../../components/GradientButton";
-import OnboardingProgress from "../../components/OnboardingProgress";
 import UnitToggle from "../../components/UnitToggle";
 import WheelPicker from "../../components/WheelPicker";
 import { spacing, typography, useThemeColors } from "../../constants/theme";
@@ -23,7 +21,7 @@ function formatDistance(meters: number, unit: "km" | "mi") {
   return `${(meters / 1000).toFixed(1)} km`;
 }
 
-export default function Goal() {
+export default function EditGoal() {
   const colors = useThemeColors();
   const goalType = useUserProfileStore((state) => state.goalType);
   const setGoalType = useUserProfileStore((state) => state.setGoalType);
@@ -39,14 +37,6 @@ export default function Goal() {
   );
   const distanceUnit = useUserProfileStore((state) => state.distanceUnit);
   const setDistanceUnit = useUserProfileStore((state) => state.setDistanceUnit);
-  const setHasCompletedOnboarding = useUserProfileStore(
-    (state) => state.setHasCompletedOnboarding,
-  );
-
-  const handleFinish = () => {
-    setHasCompletedOnboarding(true);
-    router.replace("/(tabs)/home");
-  };
 
   return (
     <SafeAreaView
@@ -57,12 +47,11 @@ export default function Goal() {
           <View style={styles.backButtonWrapper}>
             <BackButton />
           </View>
-          <OnboardingProgress step={4} total={4} />
         </View>
 
         <View style={styles.headerSection}>
           <Text style={[styles.title, { color: colors.textPrimary }]}>
-            Your Weekly Goal is Ready
+            Edit Goal
           </Text>
         </View>
 
@@ -106,22 +95,11 @@ export default function Goal() {
           </View>
         )}
 
-        <View style={styles.noteRow}>
-          <Ionicons
-            name="information-circle-outline"
-            size={18}
-            color={colors.textMuted}
-          />
-          <Text style={[styles.noteText, { color: colors.textMuted }]}>
-            You can update your goal anytime from your profile.
-          </Text>
-        </View>
-
         <View style={styles.bottomSection}>
           <GradientButton
-            label="SET AS MY GOAL"
+            label="Save"
             fullWidth
-            onPress={handleFinish}
+            onPress={() => router.back()}
           />
         </View>
       </View>
@@ -152,13 +130,5 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   pickerCaption: { fontSize: 14, fontWeight: "500" },
-  noteRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  noteText: { flex: 1, fontSize: 13, lineHeight: 18 },
   bottomSection: { width: "100%" },
 });

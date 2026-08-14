@@ -1,7 +1,12 @@
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { useRunSessionStore } from "../store/runSessionStore";
-import { classifySpeedIntensity, haversineMeters } from "./runTracking";
+import { useUserProfileStore } from "../store/userProfileStore";
+import {
+  calcSegmentCalories,
+  classifySpeedIntensity,
+  haversineMeters,
+} from "./runTracking";
 
 export const RUN_LOCATION_TASK = "run-location-task";
 
@@ -20,22 +25,24 @@ TaskManager.defineTask(RUN_LOCATION_TASK, async ({ data, error }) => {
     };
     const lastPoint = useRunSessionStore.getState().route.slice(-1)[0];
     if (!lastPoint) {
-      useRunSessionStore.getState().addPoint(point, 0, "low", 0);
+      useRunSessionStore.getState().addPoint(point, 0, "low", 0, 0);
       continue;
     }
-    if ((loc.coords.accuracy ?? 999) > 25) continue; // skip low-accuracy noise
+    if ((loc.coords.accuracy ?? 999) > 25) continue;
 
     const distance = haversineMeters(lastPoint, point);
-    if (distance < 1) continue; // ignore GPS jitter
+    if (distance < 3) continue; // ignore GPS jitter
 
     const deltaSeconds = (point.timestamp - lastPoint.timestamp) / 1000;
     const speedKmh =
       deltaSeconds > 0 ? distance / 1000 / (deltaSeconds / 3600) : 0;
     const intensity = classifySpeedIntensity(speedKmh);
+    const weightKg = useUserProfileStore.getState().weightKg;
+    const kcalDelta = calcSegmentCalories(intensity, weightKg, deltaSeconds);
 
     useRunSessionStore
       .getState()
-      .addPoint(point, distance, intensity, deltaSeconds);
+      .addPoint(point, distance, intensity, deltaSeconds, kcalDelta);
   }
 });
 
@@ -58,7 +65,26 @@ export async function startBackgroundTracking() {
     distanceInterval: 3,
     foregroundService: {
       notificationTitle: "Run Tracker",
-      notificationBody: "Tracking your run…",
+      notificationBody: "Starting your run…",
+    },
+    showsBackgroundLocationIndicator: true,
+    pausesUpdatesAutomatically: false,
+  });
+}
+
+export async function updateForegroundNotificationText(bodyText: string) {
+  const started = await Location.hasStartedLocationUpdatesAsync(
+    RUN_LOCATION_TASK,
+  ).catch(() => false);
+  if (!started) return;
+
+  await Location.startLocationUpdatesAsync(RUN_LOCATION_TASK, {
+    accuracy: Location.Accuracy.BestForNavigation,
+    timeInterval: 2000,
+    distanceInterval: 3,
+    foregroundService: {
+      notificationTitle: "Run Tracker",
+      notificationBody: bodyText,
     },
     showsBackgroundLocationIndicator: true,
     pausesUpdatesAutomatically: false,

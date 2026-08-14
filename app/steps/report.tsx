@@ -1,28 +1,45 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import WeeklyStepsChart from "../../components/WeeklyStepsChart";
 import { spacing, useThemeColors } from "../../constants/theme";
 import { useStepsStore } from "../../store/stepsStore";
 
-const WEEKDAY_LABELS = ["Today", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const WEEK_OF_MONTH_LABELS = ["This Wk", "Wk -1", "Wk -2", "Wk -3"];
+const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function StepsReport() {
   const colors = useThemeColors();
   const todaySteps = useStepsStore((s) => s.todaySteps);
+  const history = useStepsStore((s) => s.history);
   const [range, setRange] = useState<"week" | "month">("week");
 
-  const weekDays = WEEKDAY_LABELS.map((label, index) => ({
-    label,
-    steps: index === 0 ? todaySteps : 0,
-  }));
-  const monthWeeks = WEEK_OF_MONTH_LABELS.map((label, index) => ({
-    label,
-    steps: index === 0 ? todaySteps : 0,
-  }));
+  const weekDays = useMemo(() => {
+    const days = [{ label: "Today", steps: todaySteps }];
+    for (let i = 1; i <= 6; i++) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().slice(0, 10);
+      const record = history.find((h) => h.date === dateStr);
+      days.push({
+        label: WEEKDAY_SHORT[date.getDay()],
+        steps: record?.steps ?? 0,
+      });
+    }
+    return days;
+  }, [todaySteps, history]);
+
+  const monthWeeks = useMemo(() => {
+    const buckets: { label: string; steps: number }[] = [];
+    const allDays = [todaySteps, ...history.slice(0, 27).map((h) => h.steps)];
+    for (let w = 0; w < 4; w++) {
+      const chunk = allDays.slice(w * 7, w * 7 + 7);
+      const total = chunk.reduce((sum, v) => sum + v, 0);
+      buckets.push({ label: w === 0 ? "This Wk" : `Wk -${w}`, steps: total });
+    }
+    return buckets;
+  }, [todaySteps, history]);
 
   const activeData = range === "week" ? weekDays : monthWeeks;
   const total = activeData.reduce((sum, d) => sum + d.steps, 0);
@@ -51,7 +68,7 @@ export default function StepsReport() {
               Total
             </Text>
             <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
-              {total}
+              {total.toLocaleString()}
             </Text>
           </View>
           <View style={styles.summaryItem}>
@@ -59,7 +76,7 @@ export default function StepsReport() {
               Average
             </Text>
             <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
-              {average.toFixed(2)}
+              {average.toLocaleString()}
             </Text>
           </View>
         </View>

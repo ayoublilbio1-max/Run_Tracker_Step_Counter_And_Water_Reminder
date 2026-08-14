@@ -7,8 +7,9 @@ type RunSessionState = {
   status: RunStatus;
   route: GeoPoint[];
   distanceMeters: number;
-  startedAt: number | null;
-  accumulatedElapsedMs: number;
+  kcal: number;
+  elapsedMs: number;
+  lastMovementAt: number | null;
   intensitySeconds: { low: number; moderate: number; high: number };
   start: () => void;
   pause: () => void;
@@ -20,60 +21,81 @@ type RunSessionState = {
     addedDistance: number,
     intensity: "low" | "moderate" | "high",
     deltaSeconds: number,
+    kcalDelta: number,
   ) => void;
-  getElapsedMs: () => number;
 };
+
+let tickInterval: ReturnType<typeof setInterval> | null = null;
+
+function clearTick() {
+  if (tickInterval) {
+    clearInterval(tickInterval);
+    tickInterval = null;
+  }
+}
+
+function startTick(
+  set: (fn: (state: RunSessionState) => Partial<RunSessionState>) => void,
+) {
+  clearTick();
+  tickInterval = setInterval(() => {
+    set((state) => ({ elapsedMs: state.elapsedMs + 1000 }));
+  }, 1000);
+}
 
 export const useRunSessionStore = create<RunSessionState>((set, get) => ({
   status: "idle",
   route: [],
   distanceMeters: 0,
-  startedAt: null,
-  accumulatedElapsedMs: 0,
+  kcal: 0,
+  elapsedMs: 0,
+  lastMovementAt: null,
   intensitySeconds: { low: 0, moderate: 0, high: 0 },
-  start: () =>
+  start: () => {
     set({
       status: "running",
-      startedAt: Date.now(),
       route: [],
       distanceMeters: 0,
-      accumulatedElapsedMs: 0,
+      kcal: 0,
+      elapsedMs: 0,
+      lastMovementAt: Date.now(),
       intensitySeconds: { low: 0, moderate: 0, high: 0 },
-    }),
-  pause: () => {
-    const { startedAt, accumulatedElapsedMs } = get();
-    if (startedAt === null) return;
-    set({
-      status: "paused",
-      accumulatedElapsedMs: accumulatedElapsedMs + (Date.now() - startedAt),
-      startedAt: null,
     });
+    startTick(set);
   },
-  resume: () => set({ status: "running", startedAt: Date.now() }),
-  restart: () =>
+  pause: () => {
+    clearTick();
+    set({ status: "paused" });
+  },
+  resume: () => {
+    set({ status: "running", lastMovementAt: Date.now() });
+    startTick(set);
+  },
+  restart: () => {
     set({
       status: "running",
-      startedAt: Date.now(),
       route: [],
       distanceMeters: 0,
-      accumulatedElapsedMs: 0,
+      kcal: 0,
+      elapsedMs: 0,
+      lastMovementAt: Date.now(),
       intensitySeconds: { low: 0, moderate: 0, high: 0 },
-    }),
-  finish: () => set({ status: "finished" }),
-  addPoint: (point, addedDistance, intensity, deltaSeconds) =>
+    });
+    startTick(set);
+  },
+  finish: () => {
+    clearTick();
+    set({ status: "finished" });
+  },
+  addPoint: (point, addedDistance, intensity, deltaSeconds, kcalDelta) =>
     set((state) => ({
       route: [...state.route, point],
       distanceMeters: state.distanceMeters + addedDistance,
+      kcal: state.kcal + kcalDelta,
+      lastMovementAt: Date.now(),
       intensitySeconds: {
         ...state.intensitySeconds,
         [intensity]: state.intensitySeconds[intensity] + deltaSeconds,
       },
     })),
-  getElapsedMs: () => {
-    const { status, startedAt, accumulatedElapsedMs } = get();
-    if (status === "running" && startedAt !== null) {
-      return accumulatedElapsedMs + (Date.now() - startedAt);
-    }
-    return accumulatedElapsedMs;
-  },
 }));

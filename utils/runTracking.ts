@@ -31,22 +31,27 @@ export function calcPaceMinPerKm(distanceKm: number, elapsedMs: number) {
   return minutes / distanceKm;
 }
 
-export function calcRunCalories(
-  distanceKm: number,
+// MET values tuned to match the walking / jogging / running speed bands below.
+const MET_BY_INTENSITY = { low: 3.5, moderate: 7, high: 11 };
+
+export function calcSegmentCalories(
+  intensity: "low" | "moderate" | "high",
   weightKg: number,
-  elapsedMs: number,
+  deltaSeconds: number,
 ) {
-  const hours = elapsedMs / 3600000;
-  if (hours <= 0) return 0;
-  const speedKmh = distanceKm / hours;
-  const met = speedKmh < 6 ? 6 : speedKmh < 9 ? 9.8 : 11.5; // walk / jog / run bands
+  const met = MET_BY_INTENSITY[intensity];
+  const hours = deltaSeconds / 3600;
   return met * weightKg * hours;
 }
+
+// low = walking, moderate = light jog/run, high = fast running and up.
+const WALK_MAX_KMH = 6.5;
+const JOG_MAX_KMH = 10;
 
 export function classifySpeedIntensity(
   speedKmh: number,
 ): "low" | "moderate" | "high" {
-  if (speedKmh < 4) return "low";
-  if (speedKmh < 8) return "moderate";
+  if (speedKmh < WALK_MAX_KMH) return "low";
+  if (speedKmh < JOG_MAX_KMH) return "moderate";
   return "high";
 }
